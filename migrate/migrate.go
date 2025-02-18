@@ -2,7 +2,7 @@ package main
 
 import (
   "github.com/HarshithRajesh/url_shortner/initializers"
-  "github.com/HarshithRajesh/url_shorner/model"
+  "github.com/HarshithRajesh/url_shortner/model"
   "log"
 )
 

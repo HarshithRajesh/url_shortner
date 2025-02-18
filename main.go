@@ -10,6 +10,7 @@ func init(){
 }
 
 func main(){
+  go controllers.FlushDB()
   r:= gin.Default()
 
   r.GET("/",controllers.Home)

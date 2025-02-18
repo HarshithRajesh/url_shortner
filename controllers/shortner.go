@@ -8,8 +8,13 @@ import (
   "github.com/HarshithRajesh/url_shortner/initializers"
   "net/http"
   "gorm.io/gorm"
+  "sync/atomic"
+  "time"
+  "log"
+  "sync"
 )
-
+var urlHits = make(map[string]*int64)
+var mu sync.Mutex
 var base62 ="0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 func base62Encoder(num int)string{
   base:=""
@@ -35,6 +40,25 @@ func base62Decoder(s string)int{
   return number
 }
 
+func FlushDB(){
+  for{
+    time.Sleep(5*time.Second)
+    
+    for shorturl,count := range urlHits{
+      hits := atomic.SwapInt64(count,0)
+      if hits>0{
+        var newcount int64
+        err := initializers.DB.Raw("UPDATE urls SET hit_count = hit_count + ? WHERE short_url = ? RETURNING hit_count;",hits,shorturl).Scan(&newcount).Error 
+        if err !=nil{
+          log.Println("Failed to update the database")
+        } else{
+          log.Printf("Updated %s and %d with new count:%d\n",shorturl,hits,newcount)
+        }
+      }
+    }
+  }
+
+}
 func UrlShortner(c *gin.Context){
   var urladdr model.UrlInput
 
@@ -107,9 +131,17 @@ func RedirectUrl(c *gin.Context){
   } 
   return
 }
- url.HitCount+=1
- initializers.DB.Save(&url)
- c.Redirect(http.StatusFound,url.LongUrl)
+mu.Lock()
+if _,exists := urlHits[shortUrl];!exists{
+  var counts int64 = 0
+  urlHits[shortUrl] = &counts 
+} 
+  atomic.AddInt64(urlHits[shortUrl],1)
+
+  mu.Unlock()
+
+
+  c.Redirect(http.StatusFound,url.LongUrl)
 
 }
 

@@ -6,8 +6,8 @@ type UrlInput struct{
 }
 
 type Urls struct{
-  Id    uint  `gorm:"primary key;autoIncrement" json"id"`
+  Id    uint  `gorm:"primaryKey;autoIncrement" json"id"`
   LongUrl string `gorm:"not null" json:"long_url"`
-  ShortUrl string `gorm:"not null" json:"short_url"`
+  ShortUrl string `gorm:"not null;unique" json:"short_url"`
   HitCount int    `json:"hit_count"`
 }
