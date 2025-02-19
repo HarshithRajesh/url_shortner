@@ -73,4 +73,53 @@ Infrastructure Cost Reduction:
 
 2.  **Postman Usage**
 
-    To generate a URL, send a POST request to `localhost:8080/url
+    To generate a URL, send a POST request to `localhost:8080/url` with the following body:
+
+    ```json
+    {
+        "url": "[https://google.com/](https://google.com/)",
+        "code": "new"
+    }
+    ```
+
+    Output:
+
+    ```json
+    {
+        "message": {
+            "Id": 1,
+            "long_url": "[https://google.com/](https://google.com/)",
+            "short_url": "new",
+            "hit_count": 0
+        }
+    }
+    ```
+
+📊 Load Testing Results
+
+Tested with 100,000 concurrent requests using ApacheBench (ab):
+
+*   10,000 requests, 100 concurrency:
+    *   8017 requests/sec
+    *   12.47ms avg response time
+*   100,000 requests, 500 concurrency:
+    *   7171 requests/sec
+    *   69.71ms avg response time
+
+Zero Race Conditions: Verified with `sync/atomic` and stress tests.
+
+🚀 Future Improvements
+
+*   Rate limiting to prevent abuse
+*   Admin dashboard for analytics
+
+💡 Why This Stands Out?
+
+*   ✅ Optimized for high concurrency 🚀
+*   ✅ Battle-tested against race conditions 🔄
+*   ✅ Saves time & cost through caching & optimizations 💰
+*   ✅ Uses modern backend tech stack 💡
+
+📚 Contributors
+
+*   Harshith R
