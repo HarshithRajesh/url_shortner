@@ -12,6 +12,7 @@ import (
   "time"
   "log"
   "sync"
+  "context"
 )
 var urlHits = make(map[string]*int64)
 var mu sync.Mutex
@@ -43,7 +44,7 @@ func base62Decoder(s string)int{
 func FlushDB(){
   for{
     time.Sleep(5*time.Second)
-    
+       mu.Lock()    
     for shorturl,count := range urlHits{
       hits := atomic.SwapInt64(count,0)
       if hits>0{
@@ -53,6 +54,19 @@ func FlushDB(){
           log.Println("Failed to update the database")
         } else{
           log.Printf("Updated %s and %d with new count:%d\n",shorturl,hits,newcount)
+        }
+      }
+    }
+    mu.Unlock()
+
+    keys,_ := initializers.RedisClient.Keys(context.Background(),"hitcount:*").Result()
+    for _, key := range keys{
+      shortUrl := strings.TrimPrefix(key,"hitcount:")
+      hits,_ := initializers.RedisClient.Get(context.Background(),key).Int64()
+      if hits > 0{
+        err := initializers.DB.Exec("UPDATE urls SET hit_count = hit_count + ? WHERE short_url=?",hits,shortUrl).Error
+        if err == nil{
+          initializers.RedisClient.Set(context.Background(),key,0,0)
         }
       }
     }
@@ -119,6 +133,18 @@ func GetorGenerateRandomUrl(id int) string{
 }
 func RedirectUrl(c *gin.Context){
   shortUrl := c.Param("shortUrl")
+  ctx := context.Background()
+
+  longUrl,err := initializers.RedisClient.Get(ctx,shortUrl).Result()
+  if err == nil{
+    log.Println("Fetched from redis: ",shortUrl)
+    initializers.RedisClient.Incr(ctx,"hitcount:"+shortUrl)
+    c.Redirect(http.StatusFound,longUrl)
+    return
+  }
+
+
+  log.Println("Fetched from redis: ",shortUrl)
   var url model.Urls
 
   if err := initializers.DB.Where("short_url=?",shortUrl).First(&url).Error; err != nil{
@@ -139,8 +165,11 @@ if _,exists := urlHits[shortUrl];!exists{
   atomic.AddInt64(urlHits[shortUrl],1)
 
   mu.Unlock()
-
-
+  log.Println("Setting Redis key:", shortUrl, "->", url.LongUrl)
+  err = initializers.RedisClient.Set(ctx,shortUrl,url.LongUrl,24*time.Hour).Err()
+  if err != nil{
+    log.Println("Failed to set Redis key: ",err)
+  }
   c.Redirect(http.StatusFound,url.LongUrl)
 
 }

@@ -5,6 +5,8 @@ import (
   "os"
   "gorm.io/driver/postgres"
   "gorm.io/gorm"
+  "github.com/redis/go-redis/v9"
+  "context"
   // "github.com/HarshithRajesh/url_shortner/initializers"
 )
 
@@ -25,6 +27,25 @@ func ConnectDB(){
   log.Println("Successfully connected to the database")
 
 
+}
+
+var RedisClient *redis.Client 
+
+func ConnectRedis(){
+  log.Println("Initializing the redis connection")
+  RedisClient = redis.NewClient(&redis.Options{
+    Addr : "localhost:6379",
+    Password : "",
+    DB :  0,
+  })
+
+  ctx := context.Background()
+  _,err := RedisClient.Ping(ctx).Result()
+  if err != nil{
+    log.Fatalf("Failed to connect to the Redis Database")
+  } else {
+    log.Println("connected to Redis")
+  }
 }
 
 func ConnectDBTest(){
