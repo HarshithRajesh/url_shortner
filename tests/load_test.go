@@ -4,6 +4,7 @@ import (
   "time"
   "os"
   "log"
+  "context"
   "sync"
   "net/http"
   "net/http/httptest"
@@ -35,7 +36,7 @@ func TestMain(m *testing.M) {
 
     // Connect to the test database
     initializers.ConnectDBTest()
-
+    initializers.ConnectTestRedis()
     // Run migrations on the test DB
     if err := initializers.DB.AutoMigrate(&model.Urls{}); err != nil {
         log.Fatalf("Failed to migrate the test DB: %v", err)
@@ -58,11 +59,11 @@ func TestConcurrentHits(t *testing.T){
   router.GET("/:shortUrl",controllers.RedirectUrl)
   // router.GET("/:shortUrl",controllers.RedirectUrl)
 
-  shortUrl := "neo"
+  shortUrl := "big"
   var existingUrl model.Urls 
   if err := initializers.DB.Where("short_url=?",shortUrl).First(&existingUrl).Error; err !=nil{ 
   initializers.DB.Create(&model.Urls{
-    LongUrl: "https://google.com",
+    LongUrl: "https://duckduckgo.com",
     ShortUrl: shortUrl,
     HitCount : 0,
   })
@@ -91,4 +92,30 @@ time.Sleep(6 * time.Second) // More than the 5s interval in FlushDB
 
     // Check if the hit count matches the number of concurrent requests
     assert.Equal(t, concurrentRequests, url.HitCount, "Hit count should be equal to number of concurrent requests")
+}
+
+func TestConcurrentRedisHits(t *testing.T){
+  ctx:=context.Background()
+  shortUrl := "harsh"
+  longUrl := "https://youtube.com"
+
+  initializers.RedisClient.Set(ctx,shortUrl,longUrl,24*time.Hour)
+  initializers.RedisClient.Set(ctx,"hitcount:"+shortUrl,0,24*time.Hour)
+
+  const concurrentHits = 1000
+  var wg sync.WaitGroup
+
+  wg.Add(concurrentHits)
+  for i:=0;i<concurrentHits;i++{
+    go func(){
+      defer wg.Done()
+      initializers.RedisClient.Incr(ctx,"hitcount:"+shortUrl)
+    }()
+  }
+  wg.Wait()
+time.Sleep(6 * time.Second) // More than the 5s interval in FlushDB
+  hitCount, err := initializers.RedisClient.Get(ctx, "hitcount:"+shortUrl).Int()
+	assert.NoError(t, err, "Failed to fetch hit count from Redis")
+	assert.Equal(t, concurrentHits, hitCount, "Hit count should be exactly equal to the number of requests")
+
 }

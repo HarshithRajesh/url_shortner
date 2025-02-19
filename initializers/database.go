@@ -62,3 +62,23 @@ func ConnectDBTest(){
   }
   log.Println("Successfully connected to the test database")
 }
+
+var TestRedisClient *redis.Client 
+
+func ConnectTestRedis(){
+  log.Println("Initializing the test redis connection")
+  TestRedisClient = redis.NewClient(&redis.Options{
+    Addr : "localhost:6379",
+    Password : "",
+    DB :  0,
+  })
+
+  ctx := context.Background()
+  _,err := TestRedisClient.Ping(ctx).Result()
+  if err != nil{
+    log.Fatalf("Failed to connect to the test Redis Database")
+  } else {
+    log.Println("connected to test redis Redis")
+  }
+}
+

@@ -1,0 +1,40 @@
+version: "3.8"
+
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+      - redis
+    environment:
+      DATABASE_URL: "postgres://neo:babe@db:5432/url_shortner?sslmode=disable"
+      REDIS_URL: "redis:6379"
+    networks:
+      - app_network
+
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_USER: neo
+      POSTGRES_PASSWORD: babe
+      POSTGRES_DB: url_shortner
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - app_network
+
+  redis:
+    image: redis:latest
+    restart: always
+    networks:
+      - app_network
+
+volumes:
+  db_data:
+
+networks:
+  app_network:
+
