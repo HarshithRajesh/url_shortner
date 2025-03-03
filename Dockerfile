@@ -1,20 +1,14 @@
-FROM golang:1.23 AS builder
+FROM golang:1.24
 
 WORKDIR /app
-
-COPY go.mod go.sum ./
-
+COPY .env .
+COPY go.mod go.sum ./ 
 RUN go mod download
 
 COPY . .
-
-RUN go build -o main
-
-FROM alpine:latest AS runner
-
-WORKDIR /root/
-COPY --from=builder /app/main
+RUN go build -o main .
 
 EXPOSE 8080
 
-CMD ["./main"]
+CMD ["sh", "-c", "go run migrate/migrate.go && ./main"]
+# CMD ["./main"]
