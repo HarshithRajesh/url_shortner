@@ -66,7 +66,7 @@ Infrastructure Cost Reduction:
 1.  **Clone the Repository**
 
     ```bash
-    git clone [https://github.com/yourusername/url_shortner.git](https://github.com/yourusername/url_shortner.git)
+    git clone https://github.com/yourusername/url_shortner.git
     cd url_shortner
     go run main.go
     ```
