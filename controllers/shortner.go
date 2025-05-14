@@ -13,6 +13,7 @@ import (
   "log"
   "sync"
   "context"
+  "os"
 )
 var urlHits = make(map[string]*int64)
 var mu sync.Mutex
@@ -131,47 +132,95 @@ func GetorGenerateRandomUrl(id int) string{
   }
   return shortUrl
 }
-func RedirectUrl(c *gin.Context){
-  shortUrl := c.Param("shortUrl")
-  ctx := context.Background()
+// func RedirectUrl(c *gin.Context){
+//   shortUrl := c.Param("shortUrl")
+//   ctx := context.Background()
+//
+//   longUrl,err := initializers.RedisClient.Get(ctx,shortUrl).Result()
+//   if err == nil{
+//     log.Println("Fetched from redis: ",shortUrl)
+//     initializers.RedisClient.Incr(ctx,"hitcount:"+shortUrl)
+//     c.Redirect(http.StatusFound,longUrl)
+//     return
+//   }
+//
+//
+//   log.Println("Fetched from redis: ",shortUrl)
+//   var url model.Urls
+//
+//   if err := initializers.DB.Where("short_url=?",shortUrl).First(&url).Error; err != nil{
+//     if err == gorm.ErrRecordNotFound{
+//     c.JSON(http.StatusNotFound,gin.H{
+//       "error":"user not found",
+//     })
+//   } else{
+//       c.JSON(http.StatusInternalServerError,gin.H{"error":"Database error"})
+//   } 
+//   return
+// }
+// mu.Lock()
+// if _,exists := urlHits[shortUrl];!exists{
+//   var counts int64 = 0
+//   urlHits[shortUrl] = &counts 
+// } 
+//   atomic.AddInt64(urlHits[shortUrl],1)
+//
+//   mu.Unlock()
+//   log.Println("Setting Redis key:", shortUrl, "->", url.LongUrl)
+//   err = initializers.RedisClient.Set(ctx,shortUrl,url.LongUrl,24*time.Hour).Err()
+//   if err != nil{
+//     log.Println("Failed to set Redis key: ",err)
+//   }
+//   c.Redirect(http.StatusFound,url.LongUrl)
+//
+// }
+//
 
-  longUrl,err := initializers.RedisClient.Get(ctx,shortUrl).Result()
-  if err == nil{
-    log.Println("Fetched from redis: ",shortUrl)
-    initializers.RedisClient.Incr(ctx,"hitcount:"+shortUrl)
-    c.Redirect(http.StatusFound,longUrl)
-    return
-  }
+func RedirectUrl(c *gin.Context) {
+    shortUrl := c.Param("shortUrl")
+    ctx := context.Background()
 
+    useRedis := os.Getenv("USE_REDIS") != "false"
 
-  log.Println("Fetched from redis: ",shortUrl)
-  var url model.Urls
+    if useRedis {
+        longUrl, err := initializers.RedisClient.Get(ctx, shortUrl).Result()
+        if err == nil {
+            log.Println("[CACHE HIT] Redis fetched:", shortUrl)
+            initializers.RedisClient.Incr(ctx, "hitcount:"+shortUrl)
+            c.Redirect(http.StatusFound, longUrl)
+            return
+        }
+        log.Println("[CACHE MISS] Redis miss for:", shortUrl)
+    }
 
-  if err := initializers.DB.Where("short_url=?",shortUrl).First(&url).Error; err != nil{
-    if err == gorm.ErrRecordNotFound{
-    c.JSON(http.StatusNotFound,gin.H{
-      "error":"user not found",
-    })
-  } else{
-      c.JSON(http.StatusInternalServerError,gin.H{"error":"Database error"})
-  } 
-  return
+    var url model.Urls
+    if err := initializers.DB.Where("short_url = ?", shortUrl).First(&url).Error; err != nil {
+        if err == gorm.ErrRecordNotFound {
+            c.JSON(http.StatusNotFound, gin.H{"error": "URL not found"})
+        } else {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+        }
+        return
+    }
+
+    if !useRedis {
+        mu.Lock()
+        if _, exists := urlHits[shortUrl]; !exists {
+            var counts int64 = 0
+            urlHits[shortUrl] = &counts
+        }
+        atomic.AddInt64(urlHits[shortUrl], 1)
+        mu.Unlock()
+    }
+
+    if useRedis {
+        err := initializers.RedisClient.Set(ctx, shortUrl, url.LongUrl, 24*time.Hour).Err()
+        if err != nil {
+            log.Println("Redis SET failed:", err)
+        } else {
+            log.Println("Redis SET:", shortUrl, "->", url.LongUrl)
+        }
+    }
+
+    c.Redirect(http.StatusFound, url.LongUrl)
 }
-mu.Lock()
-if _,exists := urlHits[shortUrl];!exists{
-  var counts int64 = 0
-  urlHits[shortUrl] = &counts 
-} 
-  atomic.AddInt64(urlHits[shortUrl],1)
-
-  mu.Unlock()
-  log.Println("Setting Redis key:", shortUrl, "->", url.LongUrl)
-  err = initializers.RedisClient.Set(ctx,shortUrl,url.LongUrl,24*time.Hour).Err()
-  if err != nil{
-    log.Println("Failed to set Redis key: ",err)
-  }
-  c.Redirect(http.StatusFound,url.LongUrl)
-
-}
-
-

@@ -96,8 +96,8 @@ time.Sleep(6 * time.Second) // More than the 5s interval in FlushDB
 
 func TestConcurrentRedisHits(t *testing.T){
   ctx:=context.Background()
-  shortUrl := "harsh"
-  longUrl := "https://youtube.com"
+  shortUrl := "neo"
+  longUrl := "https://google.com"
 
   initializers.RedisClient.Set(ctx,shortUrl,longUrl,24*time.Hour)
   initializers.RedisClient.Set(ctx,"hitcount:"+shortUrl,0,24*time.Hour)
