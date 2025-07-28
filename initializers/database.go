@@ -33,18 +33,27 @@ var RedisClient *redis.Client
 
 func ConnectRedis(){
   log.Println("Initializing the redis connection")
+  
+  redisAddr := os.Getenv("REDIS_URL")
+  if redisAddr == "" {
+    redisAddr = "localhost:6379"
+  }
+  
+  redisPassword := os.Getenv("REDIS_PASSWORD")
+  
   RedisClient = redis.NewClient(&redis.Options{
-    Addr : "localhost:6379",
-    Password : "",
-    DB :  0,
+    Addr:     redisAddr,
+    Password: redisPassword,
+    DB:       0,
   })
 
   ctx := context.Background()
   _,err := RedisClient.Ping(ctx).Result()
   if err != nil{
-    log.Fatalf("Failed to connect to the Redis Database")
+    log.Printf("Failed to connect to Redis at %s: %v", redisAddr, err)
+    RedisClient = nil // Allow app to run without Redis
   } else {
-    log.Println("connected to Redis")
+    log.Println("Successfully connected to Redis")
   }
 }
 
