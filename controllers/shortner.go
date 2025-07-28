@@ -3,7 +3,9 @@ package controllers
 import (
 	"context"
 
+	"crypto/rand"
 	"log"
+	"math/big"
 	"net/http"
 	"os"
 	"strings"
@@ -97,38 +99,66 @@ func UrlShortner(c *gin.Context) {
 		})
 		return
 	}
+
+	// Use database transaction for atomic operations
+	tx := initializers.DB.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// Check for existing URL within transaction
 	var existing model.Urls
-	if initializers.DB.Where("long_url = ?", urladdr.Url).First(&existing).Error == nil {
+	if tx.Where("long_url = ?", urladdr.Url).First(&existing).Error == nil {
+		tx.Rollback()
 		c.JSON(http.StatusOK, gin.H{"message": existing})
 		return
 	}
+
+	// Create new URL entry
 	url := model.Urls{
 		LongUrl: urladdr.Url,
 	}
 
-	if err := initializers.DB.Create(&url).Error; err != nil {
+	if err := tx.Create(&url).Error; err != nil {
+		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to create a url",
+			"error": "Failed to create URL",
 		})
 		return
 	}
+
+	// Handle short URL assignment atomically
 	if urladdr.Code != "" && strings.TrimSpace(urladdr.Code) != "" {
-		// User provided custom code
+		// Check if custom code is available within transaction
 		var count int64
-		initializers.DB.Model(&model.Urls{}).Where("short_url=?", urladdr.Code).Count(&count)
+		tx.Model(&model.Urls{}).Where("short_url = ?", urladdr.Code).Count(&count)
 		if count > 0 {
-			url.ShortUrl = GetorGenerateRandomUrl(int(url.Id)) // Code taken, generate random
+			url.ShortUrl = GetorGenerateRandomUrl(int(url.Id))
 		} else {
-			url.ShortUrl = urladdr.Code // Use custom code
+			url.ShortUrl = urladdr.Code
 		}
 	} else {
-		// No custom code provided, generate random
 		url.ShortUrl = GetorGenerateRandomUrl(int(url.Id))
 	}
-	// url.ShortUrl = base62Encoder(int(url.Id))
-	// codeId := base62Decoder(urladdr.Code)
-	// url.ShortUrl = GetorGenerateRandomUrl(int(url.Id),codeId,urladdr.Code)
-	initializers.DB.Save(&url)
+
+	// Update with short URL
+	if err := tx.Model(&url).Update("short_url", url.ShortUrl).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to update short URL",
+		})
+		return
+	}
+
+	// Commit transaction
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to save URL",
+		})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": url,
@@ -136,62 +166,42 @@ func UrlShortner(c *gin.Context) {
 }
 
 func GetorGenerateRandomUrl(id int) string {
-	shortUrl := base62Encoder(id)
+	// Start with base62 encoding of ID
+	baseUrl := base62Encoder(id)
+
+	// Try the base URL first
 	var count int64
-	for {
+	initializers.DB.Model(&model.Urls{}).Where("short_url = ?", baseUrl).Count(&count)
+	if count == 0 {
+		return baseUrl
+	}
+
+	// If base URL exists, add random suffix
+	for attempts := 0; attempts < 10; attempts++ {
+		// Generate random suffix
+		suffix := generateRandomSuffix(2) // 2 character suffix
+		shortUrl := baseUrl + suffix
+
 		initializers.DB.Model(&model.Urls{}).Where("short_url = ?", shortUrl).Count(&count)
 		if count == 0 {
-			break
+			return shortUrl
 		}
-		id++
-		shortUrl = base62Encoder(id)
 	}
-	return shortUrl
+
+	// Fallback: use timestamp + random
+	timestamp := time.Now().UnixNano()
+	randomPart := generateRandomSuffix(3)
+	return base62Encoder(int(timestamp%999999)) + randomPart
 }
 
-// func RedirectUrl(c *gin.Context){
-//   shortUrl := c.Param("shortUrl")
-//   ctx := context.Background()
-//
-//   longUrl,err := initializers.RedisClient.Get(ctx,shortUrl).Result()
-//   if err == nil{
-//     log.Println("Fetched from redis: ",shortUrl)
-//     initializers.RedisClient.Incr(ctx,"hitcount:"+shortUrl)
-//     c.Redirect(http.StatusFound,longUrl)
-//     return
-//   }
-//
-//
-//   log.Println("Fetched from redis: ",shortUrl)
-//   var url model.Urls
-//
-//   if err := initializers.DB.Where("short_url=?",shortUrl).First(&url).Error; err != nil{
-//     if err == gorm.ErrRecordNotFound{
-//     c.JSON(http.StatusNotFound,gin.H{
-//       "error":"user not found",
-//     })
-//   } else{
-//       c.JSON(http.StatusInternalServerError,gin.H{"error":"Database error"})
-//   }
-//   return
-// }
-// mu.Lock()
-// if _,exists := urlHits[shortUrl];!exists{
-//   var counts int64 = 0
-//   urlHits[shortUrl] = &counts
-// }
-//   atomic.AddInt64(urlHits[shortUrl],1)
-//
-//   mu.Unlock()
-//   log.Println("Setting Redis key:", shortUrl, "->", url.LongUrl)
-//   err = initializers.RedisClient.Set(ctx,shortUrl,url.LongUrl,24*time.Hour).Err()
-//   if err != nil{
-//     log.Println("Failed to set Redis key: ",err)
-//   }
-//   c.Redirect(http.StatusFound,url.LongUrl)
-//
-// }
-//
+func generateRandomSuffix(length int) string {
+	result := ""
+	for i := 0; i < length; i++ {
+		randomIndex, _ := rand.Int(rand.Reader, big.NewInt(62))
+		result += string(base62[randomIndex.Int64()])
+	}
+	return result
+}
 
 func RedirectUrl(c *gin.Context) {
 	shortUrl := c.Param("shortUrl")
